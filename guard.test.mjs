@@ -1,0 +1,48 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import {readFile} from 'node:fs/promises';
+const source=await readFile(new URL('./hide-watermark.js',import.meta.url),'utf8');
+
+test('guard retries when native bridge loads after the first injection',()=>{
+  let ready=false;
+  const original=()=>true,handler={call:original},elements=new Map();
+  const document={querySelectorAll:()=>[],getElementById:id=>elements.get(id),createElement:()=>({textContent:'',remove(){elements.delete(this.id);}}),documentElement:{appendChild(e){elements.set(e.id,e);}}};
+  const window={webpackChunk_iqiyi_webapp:{push(chunk){chunk[2](()=>{if(!ready)throw Error('not loaded');return {PlayerHandler:handler};});}}};
+  const context=vm.createContext({window,document,MutationObserver:class{observe(){}disconnect(){}},setTimeout,clearTimeout});
+  vm.runInContext(source,context);
+  assert.equal(window.__iqiyiLogoGuardV1.status().nativeHook,false);
+  ready=true;
+  vm.runInContext(source,context);
+  assert.equal(window.__iqiyiLogoGuardV1.status().nativeHook,true);
+  window.__iqiyiLogoGuardV1.stop();
+  assert.equal(handler.call,original);
+  assert.equal(elements.size,0);
+});
+test('native guard suppresses only pause-ad display and restores the bridge',()=>{
+  const calls=[];
+  const original=function(...args){calls.push({receiver:this,args});return 'original-result';};
+  const handler={call:original};
+  const elements=new Map();
+  const document={querySelectorAll:()=>[],getElementById:id=>elements.get(id),createElement:()=>({textContent:'',remove(){elements.delete(this.id);}}),documentElement:{appendChild(e){elements.set(e.id,e);}}};
+  const window={webpackChunk_iqiyi_webapp:{push(chunk){chunk[2](id=>{assert.equal(id,33368);return {PlayerHandler:handler};});}}};
+  const context=vm.createContext({window,document,MutationObserver:class{observe(){}disconnect(){}},setTimeout,clearTimeout});
+  vm.runInContext(source,context);
+  const data={key:'show_max_ad',value:{bshow:true,other:42}};
+  assert.equal(handler.call('set-string',data,'callback'), 'original-result');
+  assert.equal(calls[0].args[1].value.bshow,false);
+  assert.equal(calls[0].args[1].value.other,42);
+  assert.equal(calls[0].args[2],'callback');
+  assert.equal(calls[0].receiver,handler);
+  assert.equal(data.value.bshow,true,'caller payload is not mutated');
+  const normal={key:'play',value:{bshow:true}};
+  handler.call('set-string',normal);
+  assert.equal(calls[1].args[1],normal,'normal playback is forwarded unchanged');
+  const close={key:'show_max_ad',value:{bshow:false}};
+  handler.call('set-string',close);
+  assert.equal(calls[2].args[1],close,'close is forwarded unchanged');
+  assert.equal(window.__iqiyiLogoGuardV1.status().nativePauseSwitchesBlocked,1);
+  window.__iqiyiLogoGuardV1.stop();
+  assert.equal(handler.call,original);
+  assert.equal(elements.size,0);
+});

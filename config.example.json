@@ -1,0 +1,7 @@
+{
+  "TaskName": "IQIYI-Local-Logo-Guard",
+  "InstallRoot": "D:\\Program Files\\IQIYI Video\\",
+  "UserRoot": "C:\\Users\\YOUR_USER\\AppData\\Roaming\\IQIYI Video\\",
+  "Node": "C:\\Program Files\\nodejs\\node.exe",
+  "PriorBackup": "C:\\YOUR_LOCAL_BACKUP"
+}
